@@ -97,6 +97,17 @@ CUserBasicInfoResult::~CUserBasicInfoResult()
 
 }
 
+CChangeUserStatusRequest::CChangeUserStatusRequest()
+{
+    m_uType = NET_DATA_CHANGE_STATUS;
+    m_nNewStatus = 0;
+}
+
+CChangeUserStatusRequest::~CChangeUserStatusRequest()
+{
+    
+}
+
 //class CGroupBasicInfoRequest
 CGroupBasicInfoRequest::CGroupBasicInfoRequest()
 {
@@ -170,6 +181,7 @@ CFriendStatus::CFriendStatus()
 	m_uType = NET_DATA_FRIENDS_STATUS;
 	m_uAccountID = 0;
 	m_nStatus = 0;
+    m_nClientType = 0;
     m_type = 0;
 }
 
@@ -228,6 +240,17 @@ COperateFriendResult::COperateFriendResult()
 }
 
 COperateFriendResult::~COperateFriendResult()
+{
+
+}
+
+//class CAddTeamInfoRequest
+CAddTeamInfoRequest::CAddTeamInfoRequest()
+{
+    m_uType = NET_DATA_ADD_NEW_TEAM;
+}
+
+CAddTeamInfoRequest::~CAddTeamInfoRequest()
 {
 
 }
@@ -405,6 +428,17 @@ CTargetInfoChangeResult::~CTargetInfoChangeResult()
 
 }
 
+//class CScreenshot
+CScreenshotInfo::CScreenshotInfo() : m_targetId(0)
+{
+
+}
+
+CScreenshotInfo::~CScreenshotInfo()
+{
+    
+}
+
 //class CFileItemRequest
 CFileItemRequest::CFileItemRequest()
 {
@@ -439,7 +473,7 @@ CUploadFileResult::CUploadFileResult()
 {
 	m_nFileType = FILE_ITEM_UNKNOWN;
 	m_bSuccessful = FALSE;
-	m_dwFileSize = 0;
+    m_nFileSize = 0;
 	memset(m_szLocalName, 0, sizeof(m_szLocalName));
 
 	memset(m_szMd5, 0, sizeof(m_szMd5));
@@ -462,7 +496,7 @@ void CUploadFileResult::Clone(const CUploadFileResult* pSource)
 
 	m_nFileType = pSource->m_nFileType;
 	m_bSuccessful = pSource->m_bSuccessful;
-	m_dwFileSize = pSource->m_dwFileSize;
+	m_nFileSize = pSource->m_nFileSize;
 
 	_tcscpy_s(m_szLocalName, ARRAYSIZE(m_szLocalName), pSource->m_szLocalName);
 

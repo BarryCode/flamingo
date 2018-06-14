@@ -5,7 +5,8 @@
 #include "CheckNetworkStatusTask.h"
 #include "SendMsgThread.h"
 #include "RecvMsgThread.h"
-#include "FileTask.h"
+#include "FileTaskThread.h"
+#include "ImageTaskThread.h"
 #include "net/IUSocket.h"
 
 class CFriendStatus;
@@ -21,13 +22,16 @@ public:
 	~CFlamingoClient(void);
 
 public:
-	BOOL Init();												// 初始化客户端
-	void UnInit();												// 反初始化客户端
+	bool InitProxyWnd();										// 初始化代理窗口
+    bool InitNetThreads();                                      // 初始化网络线程
+	void Uninit();												// 反初始化客户端
 
 	void SetServer(PCTSTR pszServer);
     void SetFileServer(PCTSTR pszServer);
+    void SetImgServer(PCTSTR pszServer);
     void SetPort(short port);
 	void SetFilePort(short port);
+    void SetImgPort(short port);
 
 	void SetUser(LPCTSTR lpUserAccount, LPCTSTR lpUserPwd);		// 设置UTalk号码和密码
 	void SetLoginStatus(long nStatus);							// 设置登录状态
@@ -38,20 +42,24 @@ public:
 	void SetFindFriendWindow(HWND hwndFindFriend);				// 设置查找用户结果反馈窗口
 
 	void StartCheckNetworkStatusTask();							
-	//void StartGetUserInfoTask(long nType);						//获取好友
+	//void StartGetUserInfoTask(long nType);					//获取好友
 	void StartHeartbeatTask();
 
 	void Register(PCTSTR pszAccountName, PCTSTR pszNickName, PCTSTR pszPassword);
-	void Login();							                    // 登录
+    void Login(int nStatus = STATUS_ONLINE);				    // 登录
 	BOOL Logout();												// 注销
 	void CancelLogin();											// 取消登录
     void GetFriendList();                                       // 获取好友列表
     void GetGroupMembers(int32_t groupid);                      // 获取群成员
+    void ChangeStatus(int32_t nNewStatus);                      // 更改自己的登录状态        
 
 	BOOL FindFriend(PCTSTR pszAccountName, long nType, HWND hReflectionWnd);// 查找好友
 	BOOL AddFriend(UINT uAccountToAdd);
 	void ResponseAddFriendApply(UINT uAccountID, UINT uCmd);	//回应加好友请求任务
 	BOOL DeleteFriend(UINT uAccountID);							// 删除好友
+
+    bool AddNewTeam(PCTSTR pszNewTeamName);                     //添加新分组
+
 	BOOL UpdateLogonUserInfo(PCTSTR pszNickName, 
 							 PCTSTR pszSignature,
 							 UINT uGender,
@@ -133,6 +141,7 @@ public:
 	long ParseBuddyStatus(long nFlag);					// 解析用户在线状态
 	void CacheBuddyStatus();							// 缓存用户在线状态
 	BOOL SetBuddyStatus(UINT uAccountID, long nStatus);
+    BOOL SetBuddyClientType(UINT uAccountID, long nNewClientType);
 
 private:
 	void OnHeartbeatResult(UINT message, WPARAM wParam, LPARAM lParam);
@@ -161,6 +170,7 @@ private:
 	void OnSysGroupMsg(UINT message, WPARAM wParam, LPARAM lParam);
 	void OnStatusChangeMsg(UINT message, WPARAM wParam, LPARAM lParam);
 	void OnKickMsg(UINT message, WPARAM wParam, LPARAM lParam);
+    void OnScreenshotMsg(UINT message, WPARAM wParam, LPARAM lParam);
 	void OnUpdateBuddyNumber(UINT message, WPARAM wParam, LPARAM lParam);
 	void OnUpdateGMemberNumber(UINT message, WPARAM wParam, LPARAM lParam);
 	void OnUpdateGroupNumber(UINT message, WPARAM wParam, LPARAM lParam);
@@ -188,10 +198,9 @@ public:
 
     CSendMsgThread					m_SendMsgThread;
     CRecvMsgThread                  m_RecvMsgThread;
-    CFileTask						m_FileTask;
-	CIUSocket                       m_SocketClient;
+    CFileTaskThread					m_FileTask;
+    CImageTaskThread                m_ImageTask;
     
-
 	CUserConfig						m_UserConfig;
 
 	std::vector<AddFriendInfo*>		m_aryAddFriendInfo;

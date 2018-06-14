@@ -14,7 +14,7 @@ using namespace net;
 class TcpSession
 {
 public:
-    TcpSession(const std::shared_ptr<TcpConnection>& conn);
+    TcpSession(const std::weak_ptr<TcpConnection>& tmpconn);
     ~TcpSession();
 
     TcpSession(const TcpSession& rhs) = delete;
@@ -22,12 +22,21 @@ public:
 
     std::shared_ptr<TcpConnection> GetConnectionPtr()
     {
+        if (tmpConn_.expired())
+            return NULL;
+
         return tmpConn_.lock();
     }
 
-    void Send(const std::string& buf);
-    void Send(const char* p, int length);
+    void Send(int32_t cmd, int32_t seq, const std::string& data);
+    void Send(int32_t cmd, int32_t seq, const char* data, int32_t dataLength);
+    void Send(const std::string& p);
+    void Send(const char* p, int32_t length);
+
+private:
+    void SendPackage(const char* p, int32_t length);
 
 protected:
+    //TcpSession引用TcpConnection类必须是弱指针，因为TcpConnection可能会因网络出错自己销毁，此时TcpSession应该也要销毁
     std::weak_ptr<TcpConnection>    tmpConn_;
 };

@@ -13,10 +13,13 @@
 #include "UpdateDlg.h"
 #include "Updater.h"
 #include "LoginSettingsDlg.h"
-#include "File.h"
+#include "File2.h"
 #include "IULog.h"
 #include "UserSessionData.h"
 #include "Utils.h"
+#include "IniFile.h"
+#include "UIText.h"
+#include "PerformanceCounter.h"
 
 CAppModule _Module;
 
@@ -75,6 +78,37 @@ int Run(LPTSTR /*lpstrCmdLine = NULL*/, int nCmdShow/* = SW_SHOWDEFAULT*/)
 	return nRet;
 }
 
+void ClearExpiredLog(PCTSTR pszFileSuffixName)
+{    
+    if (pszFileSuffixName == NULL)
+        return;
+    
+    WIN32_FIND_DATA win32FindData = { 0 };
+    TCHAR szLogFilePath[MAX_PATH] = { 0 };
+    _stprintf_s(szLogFilePath, MAX_PATH, _T("%sLogs\\*.%s"), g_szHomePath, pszFileSuffixName);
+    HANDLE hFindFile = ::FindFirstFile(szLogFilePath, &win32FindData);
+    if (hFindFile == INVALID_HANDLE_VALUE)
+        return;
+
+    do
+    {
+        if (_tcsicmp(win32FindData.cFileName, _T(".")) != 0 ||
+            _tcsicmp(win32FindData.cFileName, _T("..")) != 0)
+        {
+            memset(szLogFilePath, 0, sizeof(szLogFilePath));
+            _stprintf_s(szLogFilePath, MAX_PATH, _T("%sLogs\\%s"), g_szHomePath, win32FindData.cFileName);
+            //这里不用检测是否删除成功,因为最新的一个log是我们需要的,不能删除,它正被此进程占用着,所以删不掉
+            ::DeleteFile(szLogFilePath);
+        }
+
+        if (!::FindNextFile(hFindFile, &win32FindData))
+            break;
+
+    } while (true);
+
+    ::FindClose(hFindFile);
+}
+
 
 BOOL InitSocket()
 {
@@ -109,12 +143,40 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPTSTR lp
 	SYSTEMTIME st = {0};
 	::GetLocalTime(&st);
 	TCHAR szLogFileName[MAX_PATH] = {0};
-	_stprintf_s(szLogFileName, MAX_PATH, _T("%sLog\\%04d%02d%02d%02d%02d%02d.log"), g_szHomePath, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
-	CIULog::Init(TRUE, szLogFileName);
+	_stprintf_s(szLogFileName, MAX_PATH, _T("%s\\Logs\\%04d%02d%02d%02d%02d%02d.log"), g_szHomePath, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+	CIULog::Init(true, false, szLogFileName);
 
+    //初始化性能计数器
+    TCHAR szPerformanceFileName[MAX_PATH] = { 0 };
+    _stprintf_s(szPerformanceFileName, MAX_PATH, _T("%s\\Logs\\%04d%02d%02d%02d%02d%02d.perf"), g_szHomePath, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+    CPerformanceCounter::Init(true, szPerformanceFileName);
 
+    //TODO: 统一到AppConfig类中去
+    CIniFile iniFile;
+    CString strIniFilePath(g_szHomePath);
+    strIniFilePath += _T("config\\flamingo.ini");
+    bool bNeedClear = true;
+    if (iniFile.ReadInt(_T("app"), _T("clearexpirelog"), 0, strIniFilePath) == 0)
+        bNeedClear = false;
+
+    if (bNeedClear)
+    {
+        //清理过期的日志文件
+        ClearExpiredLog(_T("log"));
+        ClearExpiredLog(_T("perf"));
+    }
+
+    //日志级别
+    int nLogLevel = iniFile.ReadInt(_T("app"), _T("loglevel"), 0, strIniFilePath);
+    CIULog::SetLevel((LOG_LEVEL)nLogLevel);
+    
 	if(!InitSocket())
 		return 0;
+
+    //加载配置的程序标题
+    TCHAR szAppTitle[128] = { 0 };
+    iniFile.ReadString(_T("ui"), _T("apptitle"), UI_APP_TITLE, szAppTitle, ARRAYSIZE(szAppTitle), strIniFilePath);
+    g_strAppTitle = szAppTitle;
 
 	tstring strFileName = Hootina::CPath::GetAppPath() + _T("richFace.dll");
 	BOOL bRet = DllRegisterServer(strFileName.c_str());	// 注册COM组件
@@ -157,7 +219,7 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPTSTR lp
 
 	UnInitSocket();
 
-	CIULog::Unit();
+	CIULog::Uninit();
 	
 	::OleUninitialize();
 

@@ -1,4 +1,3 @@
-
 #include <assert.h>
 #include <errno.h>
 #include <poll.h>
@@ -126,7 +125,6 @@ void EPollPoller::updateChannel(Channel* channel)
 	{
 		// update existing one with EPOLL_CTL_MOD/DEL
 		int fd = channel->fd();
-		(void)fd;
 		assert(channels_.find(fd) != channels_.end());
 		assert(channels_[fd] == channel);
 		assert(index == kAdded);
@@ -178,7 +176,8 @@ void EPollPoller::update(int operation, Channel* channel)
 		}
 		else
 		{
-			LOG_SYSFATAL << "epoll_ctl op=" << operation << " fd=" << fd;
+			//FIXME： epoll_ctl执行失败这里会导致程序退出
+            LOG_SYSFATAL << "epoll_ctl op=" << operation << " fd=" << fd;
 		}
 	}
 }

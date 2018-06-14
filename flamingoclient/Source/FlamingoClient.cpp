@@ -9,7 +9,9 @@
 #include "UserSessionData.h"
 #include "CustomMsgDef.h"
 #include "Startup.h"
-#include "File.h"
+#include "File2.h"
+#include "Path.h"
+#include <sstream>
 
 CFlamingoClient& CFlamingoClient::GetInstance()
 {
@@ -18,11 +20,7 @@ CFlamingoClient& CFlamingoClient::GetInstance()
 }
 
 
-CFlamingoClient::CFlamingoClient(void) : 
-m_SocketClient(&m_RecvMsgThread),
-m_SendMsgThread(&m_SocketClient),
-m_RecvMsgThread(&m_SocketClient),
-m_FileTask(&m_SocketClient)
+CFlamingoClient::CFlamingoClient(void)
 {
 	m_ServerTime = 0;
 
@@ -43,6 +41,7 @@ m_FileTask(&m_SocketClient)
     m_RecvMsgThread.m_lpUserMgr = &m_UserMgr;
     m_RecvMsgThread.m_pFMGClient = this;
     m_FileTask.m_lpFMGClient = this;
+    m_ImageTask.m_lpFMGClient = this;
 }
 
 CFlamingoClient::~CFlamingoClient(void)
@@ -51,63 +50,83 @@ CFlamingoClient::~CFlamingoClient(void)
 }
 
 // 初始化客户端
-BOOL CFlamingoClient::Init()
+bool CFlamingoClient::InitProxyWnd()
 {
 	BOOL bRet = CreateProxyWnd();	// 创建代理窗口
 	if (!bRet)
-		return FALSE;
+		return false;
 
-    m_SocketClient.Init();
+    CIUSocket::GetInstance().LoadConfig();
+
+	return true;
+}
+
+bool CFlamingoClient::InitNetThreads()
+{
+    CIUSocket::GetInstance().SetRecvMsgThread(&m_RecvMsgThread);
+    CIUSocket::GetInstance().Init();
 
     m_SendMsgThread.Start();
     m_RecvMsgThread.Start();
 
-	m_SendMsgThread.m_lpFMGClient = this;
+    m_SendMsgThread.m_lpFMGClient = this;
 
-	m_FileTask.Start();
+    m_FileTask.Start();
+    m_ImageTask.Start();
 
-	//CSendFileThread::GetInstance().AttachSocketClient(&m_SocketClient);
+    //CSendFileThread::GetInstance().AttachSocketClient(&m_SocketClient);
     //CSendFileThread::GetInstance().Start();
 
-	return TRUE;
+    return true;
 }
 
 // 反初始化客户端
-void CFlamingoClient::UnInit()
+void CFlamingoClient::Uninit()
 {
 	DestroyProxyWnd();				// 销毁代理窗口
 
-	m_SocketClient.Uninit();
+    CIUSocket::GetInstance().Uninit();
     m_SendMsgThread.Stop();
     m_RecvMsgThread.Stop();
 	m_FileTask.Stop();
+    m_ImageTask.Stop();
 
-    m_SocketClient.Join();
+    CIUSocket::GetInstance().Join();
     m_SendMsgThread.Join();
     m_RecvMsgThread.Join();
 	m_FileTask.Join();
+    m_ImageTask.Join();
 }
 
 void CFlamingoClient::SetServer(PCTSTR pszServer)
 {
-	m_SocketClient.SetServer(pszServer);
+    CIUSocket::GetInstance().SetServer(pszServer);
 }
 
 void CFlamingoClient::SetFileServer(PCTSTR pszServer)
 {
-    m_SocketClient.SetFileServer(pszServer);
+    CIUSocket::GetInstance().SetFileServer(pszServer);
+}
+
+void CFlamingoClient::SetImgServer(PCTSTR pszServer)
+{
+    CIUSocket::GetInstance().SetImgServer(pszServer);
 }
 
 void CFlamingoClient::SetPort(short port)
 {
-	m_SocketClient.SetPort(port);
+    CIUSocket::GetInstance().SetPort(port);
 }
 
 void CFlamingoClient::SetFilePort(short port)
 {
-    m_SocketClient.SetFilePort(port);
+    CIUSocket::GetInstance().SetFilePort(port);
 }
 
+void CFlamingoClient::SetImgPort(short port)
+{
+    CIUSocket::GetInstance().SetImgPort(port);
+}
 
 // 设置UTalk号码和密码
 void CFlamingoClient::SetUser(LPCTSTR lpUserAccount, LPCTSTR lpUserPwd)
@@ -155,15 +174,15 @@ void CFlamingoClient::Register(PCTSTR pszAccountName, PCTSTR pszNickName, PCTSTR
 	//TODO: 如果此时断网，则直接返回
 	CRegisterRequest* pRequest = new CRegisterRequest();
 	char szData[64] = {0};
-	UnicodeToUtf8(pszAccountName, szData, ARRAYSIZE(szData));
+    EncodeUtil::UnicodeToUtf8(pszAccountName, szData, ARRAYSIZE(szData));
 	strcpy_s(pRequest->m_szAccountName, ARRAYSIZE(pRequest->m_szAccountName), szData);
 
 	memset(szData, 0, sizeof(szData));
-	UnicodeToUtf8(pszNickName, szData, ARRAYSIZE(szData));
+    EncodeUtil::UnicodeToUtf8(pszNickName, szData, ARRAYSIZE(szData));
 	strcpy_s(pRequest->m_szNickName, ARRAYSIZE(pRequest->m_szNickName), szData);
 
 	memset(szData, 0, sizeof(szData));
-	UnicodeToUtf8(pszPassword, szData, ARRAYSIZE(szData));
+    EncodeUtil::UnicodeToUtf8(pszPassword, szData, ARRAYSIZE(szData));
 	strcpy_s(pRequest->m_szPassword, ARRAYSIZE(pRequest->m_szPassword), szData);
 
 	m_SendMsgThread.AddItem(pRequest);
@@ -181,7 +200,7 @@ BOOL CFlamingoClient::FindFriend(PCTSTR pszAccountName, long nType, HWND hReflec
 
 	CFindFriendRequest* pRequest = new CFindFriendRequest();
 	char szData[64] = {0};
-	UnicodeToUtf8(pszAccountName, szData, ARRAYSIZE(szData));
+    EncodeUtil::UnicodeToUtf8(pszAccountName, szData, ARRAYSIZE(szData));
 	strcpy_s(pRequest->m_szAccountName, ARRAYSIZE(pRequest->m_szAccountName), szData);
 	pRequest->m_nType = nType;
 	
@@ -218,6 +237,73 @@ BOOL CFlamingoClient::DeleteFriend(UINT uAccountID)
 	return TRUE;
 }
 
+bool CFlamingoClient::AddNewTeam(PCTSTR pszNewTeamName)
+{
+    if (pszNewTeamName == NULL || pszNewTeamName[0] == NULL)
+        return false;
+    /* 组装以后的格式
+            [
+                {
+                    "teamindex": 0,
+                    "teamname": "My Friends",
+                    "members": [
+                        {
+                            "userid": 4,
+                            "markname": ""
+                        },
+                        {
+                            "userid": 124,
+                            "markname": ""
+                        }
+                    ]
+                },
+                {
+                    "teamindex": 1,
+                    "teamname": "My Classmates",    //新分组
+                    "members": []
+                }
+            ]
+    */
+
+    std::wostringstream osTeamInfo;
+    osTeamInfo << _T("[");
+    for (size_t i = 0; i < m_UserMgr.m_BuddyList.m_arrBuddyTeamInfo.size(); ++i)
+    {
+        osTeamInfo << _T("{\"teamindex\":") << i 
+                   << _T(", \"teamname\": \"") << m_UserMgr.m_BuddyList.m_arrBuddyTeamInfo[i]->m_strName 
+                   << _T("\", \"members\":[");
+        for (size_t j = 0; j < m_UserMgr.m_BuddyList.m_arrBuddyTeamInfo[i]->m_arrBuddyInfo.size(); ++j)
+        {
+            osTeamInfo << _T("{\"userid\":") << m_UserMgr.m_BuddyList.m_arrBuddyTeamInfo[i]->m_arrBuddyInfo[j]->m_uUserID << _T(", \"markname\":\"\"}");
+            //最后一个结尾不加逗号
+            if (j != m_UserMgr.m_BuddyList.m_arrBuddyTeamInfo[i]->m_arrBuddyInfo.size() - 1)
+                osTeamInfo << _T(",");
+        }
+
+        osTeamInfo << _T("]}");
+        //最后一个结尾不加逗号
+        if (i != m_UserMgr.m_BuddyList.m_arrBuddyTeamInfo.size() - 1)
+            osTeamInfo << _T(",");
+    }
+
+    //新分组节点
+    osTeamInfo << _T(", {\"teamindex\":") << m_UserMgr.m_BuddyList.m_arrBuddyTeamInfo.size()
+               << _T(", \"teamname\": \"") << pszNewTeamName
+               << _T("\", \"members\":[");
+
+    osTeamInfo << _T("]}]");
+
+    tstring strTeamInfo = osTeamInfo.str();
+
+    //TODO: 先判断是否离线
+    CAddTeamInfoRequest* pRequest = new CAddTeamInfoRequest();
+    pRequest->m_strNewTeamInfo = strTeamInfo;
+
+    m_SendMsgThread.AddItem(pRequest);
+
+    return true;
+}
+
 BOOL CFlamingoClient::UpdateLogonUserInfo(  PCTSTR pszNickName, 
 										 PCTSTR pszSignature, 
 										 UINT uGender, 
@@ -236,35 +322,35 @@ BOOL CFlamingoClient::UpdateLogonUserInfo(  PCTSTR pszNickName,
 	char szData[512] = {0};
 	if(pszNickName!=NULL &&*pszNickName!=NULL)
 	{
-		UnicodeToUtf8(pszNickName, szData, ARRAYSIZE(szData));
+        EncodeUtil::UnicodeToUtf8(pszNickName, szData, ARRAYSIZE(szData));
 		strcpy_s(pRequest->m_szNickName, ARRAYSIZE(pRequest->m_szNickName), szData);
 	}
 	
 	if(pszSignature!=NULL &&*pszSignature!=NULL)
 	{
 		memset(szData, 0, sizeof(szData));
-		UnicodeToUtf8(pszSignature, szData, ARRAYSIZE(szData));
+        EncodeUtil::UnicodeToUtf8(pszSignature, szData, ARRAYSIZE(szData));
 		strcpy_s(pRequest->m_szSignature, ARRAYSIZE(pRequest->m_szSignature), szData);
 	}
 
 	if(pszAddress!=NULL &&*pszAddress!=NULL)
 	{
 		memset(szData, 0, sizeof(szData));
-		UnicodeToUtf8(pszAddress, szData, ARRAYSIZE(szData));
+        EncodeUtil::UnicodeToUtf8(pszAddress, szData, ARRAYSIZE(szData));
 		strcpy_s(pRequest->m_szAddress, ARRAYSIZE(pRequest->m_szAddress), szData);
 	}
 
 	if(pszPhone!=NULL &&*pszPhone!=NULL)
 	{
 		memset(szData, 0, sizeof(szData));
-		UnicodeToUtf8(pszPhone, szData, ARRAYSIZE(szData));
+        EncodeUtil::UnicodeToUtf8(pszPhone, szData, ARRAYSIZE(szData));
 		strcpy_s(pRequest->m_szPhone, ARRAYSIZE(pRequest->m_szPhone), szData);
 	}
 	
 	if(pszMail!=NULL &&*pszMail!=NULL)
 	{
 		memset(szData, 0, sizeof(szData));
-		UnicodeToUtf8(pszMail, szData, ARRAYSIZE(szData));
+        EncodeUtil::UnicodeToUtf8(pszMail, szData, ARRAYSIZE(szData));
 		strcpy_s(pRequest->m_szMail, ARRAYSIZE(pRequest->m_szMail), szData);
 	}
 
@@ -329,10 +415,10 @@ void CFlamingoClient::ModifyPassword(PCTSTR pszOldPassword, PCTSTR pszNewPasswor
 	
 	char szData[64] = {0};
 	CModifyPasswordRequest* pRequest = new CModifyPasswordRequest();
-	UnicodeToUtf8(pszOldPassword, szData, ARRAYSIZE(szData));
+    EncodeUtil::UnicodeToUtf8(pszOldPassword, szData, ARRAYSIZE(szData));
 	strcpy_s(pRequest->m_szOldPassword, ARRAYSIZE(pRequest->m_szOldPassword), szData);
 	memset(szData, 0, sizeof(szData));
-	UnicodeToUtf8(pszNewPassword, szData, ARRAYSIZE(szData));
+    EncodeUtil::UnicodeToUtf8(pszNewPassword, szData, ARRAYSIZE(szData));
 	strcpy_s(pRequest->m_szNewPassword, ARRAYSIZE(pRequest->m_szNewPassword), szData);
 	m_SendMsgThread.AddItem(pRequest);
 }
@@ -344,7 +430,7 @@ void CFlamingoClient::CreateNewGroup(PCTSTR pszGroupName)
 	
 	char szData[64] = {0};
 	CCreateNewGroupRequest* pRequest = new CCreateNewGroupRequest();
-	UnicodeToUtf8(pszGroupName, szData, ARRAYSIZE(szData));
+    EncodeUtil::UnicodeToUtf8(pszGroupName, szData, ARRAYSIZE(szData));
 	strcpy_s(pRequest->m_szGroupName, ARRAYSIZE(pRequest->m_szGroupName), szData);
     m_SendMsgThread.AddItem(pRequest);
 }
@@ -365,7 +451,7 @@ void CFlamingoClient::ResponseAddFriendApply(UINT uAccountID, UINT uCmd)
 }
 
 // 登录
-void CFlamingoClient::Login()
+void CFlamingoClient::Login(int nStatus/* = STATUS_ONLINE*/)
 {
 	if (!IsOffline() || m_UserMgr.m_UserInfo.m_strAccount.empty() || m_UserMgr.m_UserInfo.m_strPassword.empty())
 		return;
@@ -375,14 +461,15 @@ void CFlamingoClient::Login()
 		return;
 	
 	char szData[64] = {0};
-	UnicodeToUtf8(m_UserMgr.m_UserInfo.m_strAccount.c_str(), szData, ARRAYSIZE(szData));
+    EncodeUtil::UnicodeToUtf8(m_UserMgr.m_UserInfo.m_strAccount.c_str(), szData, ARRAYSIZE(szData));
 	strcpy_s(pLoginRequest->m_szAccountName, ARRAYSIZE(pLoginRequest->m_szAccountName), szData);
 
 	memset(szData, 0, sizeof(szData));
-	UnicodeToUtf8(m_UserMgr.m_UserInfo.m_strPassword.c_str(), szData, ARRAYSIZE(szData));
+    EncodeUtil::UnicodeToUtf8(m_UserMgr.m_UserInfo.m_strPassword.c_str(), szData, ARRAYSIZE(szData));
 	strcpy_s(pLoginRequest->m_szPassword, ARRAYSIZE(pLoginRequest->m_szPassword), szData);
 
-	pLoginRequest->m_nStatus = STATUS_ONLINE;
+    //这个地方加上实际的用户状态
+    pLoginRequest->m_nStatus = STATUS_AWAY;
 	
 	if(IsMobileNumber(m_UserMgr.m_UserInfo.m_strAccount.c_str()))
 		pLoginRequest->m_nLoginType = LOGIN_USE_MOBILE_NUMBER;
@@ -405,6 +492,14 @@ void CFlamingoClient::GetGroupMembers(int32_t groupid)
     CGroupBasicInfoRequest* pGroupInfoRequest = new CGroupBasicInfoRequest();
     pGroupInfoRequest->m_groupid = groupid;
     m_SendMsgThread.AddItem(pGroupInfoRequest);
+}
+
+void CFlamingoClient::ChangeStatus(int32_t nNewStatus)
+{
+    CChangeUserStatusRequest* pChangeStatusRequest = new CChangeUserStatusRequest();
+    pChangeStatusRequest->m_nNewStatus = nNewStatus;
+
+    m_SendMsgThread.AddItem(pChangeStatusRequest);
 }
 
 // 注销
@@ -676,6 +771,7 @@ BOOL CFlamingoClient::SendSessMsg(UINT nGroupId, UINT nToUin, time_t nTime, LPCT
 		return FALSE;
 
 	//return m_SendMsgTask.AddSessMsg(nGroupId, nToUin, nTime, lpMsg);
+    return FALSE;
 }
 
 
@@ -890,12 +986,12 @@ void CFlamingoClient::OnNetworkStatusChange(UINT message, WPARAM wParam, LPARAM 
 
 	if(m_bNetworkAvailable)
 	{
-		CIULog::Log(LOG_WARNING, __FUNCSIG__, _T("Local connection is on service, try to relogon."));		
+		LOG_WARNING("Local connection is on service, try to relogon.");		
 		GoOnline();
 	}
 	else
 	{
-		CIULog::Log(LOG_WARNING, __FUNCSIG__, _T("Local connection is out of service, make the user offline."));
+		LOG_WARNING("Local connection is out of service, make the user offline.");
 		GoOffline();
 	}
 	
@@ -929,29 +1025,29 @@ void CFlamingoClient::OnLoginResult(UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		m_UserMgr.m_UserInfo.m_nStatus = STATUS_ONLINE;
 		TCHAR szAccountName[64] = {0};
-		Utf8ToUnicode(pLoginResult->m_szAccountName, szAccountName, ARRAYSIZE(szAccountName));
+        EncodeUtil::Utf8ToUnicode(pLoginResult->m_szAccountName, szAccountName, ARRAYSIZE(szAccountName));
 		m_UserMgr.m_UserInfo.m_strAccount = szAccountName;
         TCHAR szNickName[64] = { 0 };
-        Utf8ToUnicode(pLoginResult->m_szNickName, szNickName, ARRAYSIZE(szNickName));
+        EncodeUtil::Utf8ToUnicode(pLoginResult->m_szNickName, szNickName, ARRAYSIZE(szNickName));
         m_UserMgr.m_UserInfo.m_strNickName = szNickName;
         m_UserMgr.m_UserInfo.m_nFace = pLoginResult->m_nFace;
         m_UserMgr.m_UserInfo.m_nGender = pLoginResult->m_nGender;
         m_UserMgr.m_UserInfo.m_nBirthday = pLoginResult->m_nBirthday;
 
         TCHAR szSignature[512] = { 0 };
-        Utf8ToUnicode(pLoginResult->m_szSignature, szSignature, ARRAYSIZE(szSignature));
+        EncodeUtil::Utf8ToUnicode(pLoginResult->m_szSignature, szSignature, ARRAYSIZE(szSignature));
         m_UserMgr.m_UserInfo.m_strSign = szSignature;
 
         TCHAR szAddress[512] = { 0 };
-        Utf8ToUnicode(pLoginResult->m_szAddress, szAddress, ARRAYSIZE(szAddress));
+        EncodeUtil::Utf8ToUnicode(pLoginResult->m_szAddress, szAddress, ARRAYSIZE(szAddress));
         m_UserMgr.m_UserInfo.m_strAddress = szAddress;
 
         TCHAR szPhoneNumber[64] = { 0 };
-        Utf8ToUnicode(pLoginResult->m_szPhoneNumber, szPhoneNumber, ARRAYSIZE(szPhoneNumber));
+        EncodeUtil::Utf8ToUnicode(pLoginResult->m_szPhoneNumber, szPhoneNumber, ARRAYSIZE(szPhoneNumber));
         m_UserMgr.m_UserInfo.m_strMobile = szPhoneNumber;
 
         TCHAR szMail[512] = { 0 };
-        Utf8ToUnicode(pLoginResult->m_szMail, szMail, ARRAYSIZE(szMail));
+        EncodeUtil::Utf8ToUnicode(pLoginResult->m_szMail, szMail, ARRAYSIZE(szMail));
         m_UserMgr.m_UserInfo.m_strEmail = szMail;
 
         m_UserMgr.m_UserInfo.m_strCustomFaceName = pLoginResult->m_szCustomFace;
@@ -966,7 +1062,7 @@ void CFlamingoClient::OnLoginResult(UINT message, WPARAM wParam, LPARAM lParam)
                 GetFileMd5ValueW(cachedUserThumb, szCachedThumbMd5, ARRAYSIZE(szCachedThumbMd5));
 
                 TCHAR szThumbMd5Unicode[64] = { 0 };
-                Utf8ToUnicode(pLoginResult->m_szCustomFace, szThumbMd5Unicode, ARRAYSIZE(szThumbMd5Unicode));
+                EncodeUtil::Utf8ToUnicode(pLoginResult->m_szCustomFace, szThumbMd5Unicode, ARRAYSIZE(szThumbMd5Unicode));
                 if (_tcsncmp(szCachedThumbMd5, szThumbMd5Unicode, 32) == 0)
                 {
                     m_UserMgr.m_UserInfo.m_bUseCustomFace = TRUE;
@@ -1010,113 +1106,133 @@ void CFlamingoClient::OnUpdateUserBasicInfo(UINT message, WPARAM wParam, LPARAM 
 		return;
 
     m_UserMgr.ClearUserInfo();
-    //TODO: 暂且先创建一个默认好友分组
-    CBuddyTeamInfo* pTeamInfo = new CBuddyTeamInfo();
-    pTeamInfo->m_nIndex = 0;
-    pTeamInfo->m_strName = _T("我的好友");
-    m_UserMgr.m_BuddyList.m_arrBuddyTeamInfo.push_back(pTeamInfo);
+    //没有好友，默认创建一个叫“我的好友”的默认好友分组
+    if (pResult->m_mapUserBasicInfo.empty())
+    {
+        CBuddyTeamInfo* pTeamInfo = new CBuddyTeamInfo();
+        pTeamInfo->m_nIndex = 0;
+        pTeamInfo->m_strName = _T("我的好友");
+        m_UserMgr.m_BuddyList.m_arrBuddyTeamInfo.push_back(pTeamInfo);
+    }
+    else
+    {
+        //TODO: 暂且先创建一个默认群分组
 
-    //TODO: 暂且先创建一个默认群分组
+        CBuddyInfo* pBuddyInfo = NULL;
+        TCHAR szAccountName[32] = { 0 };
+        TCHAR szNickName[32] = { 0 };
+        TCHAR szSignature[256] = { 0 };
+        TCHAR szPhoneNumber[32] = { 0 };
+        TCHAR szMail[32] = { 0 };
+        TCHAR szAddress[64] = { 0 };
 
-    CBuddyInfo* pBuddyInfo = NULL;
-    TCHAR szAccountName[32] = { 0 };
-    TCHAR szNickName[32] = { 0 };
-    TCHAR szSignature[256] = { 0 };
-    TCHAR szPhoneNumber[32] = { 0 };
-    TCHAR szMail[32] = { 0 };
+        TCHAR szGroupAccount[32];
 
-    TCHAR szGroupAccount[32];
-
-    CGroupInfo* pGroupInfo = NULL;
-    for (auto& iter : pResult->m_listUserBasicInfo)
-    {       
-        Utf8ToUnicode(iter->szAccountName, szAccountName, ARRAYSIZE(szAccountName));
-        Utf8ToUnicode(iter->szNickName, szNickName, ARRAYSIZE(szNickName));
-        Utf8ToUnicode(iter->szSignature, szSignature, ARRAYSIZE(szSignature));
-        Utf8ToUnicode(iter->szPhoneNumber, szPhoneNumber, ARRAYSIZE(szPhoneNumber));
-        Utf8ToUnicode(iter->szMail, szMail, ARRAYSIZE(szMail));
+        CBuddyTeamInfo* pTeamInfo = NULL;
+        CGroupInfo* pGroupInfo = NULL;
+        int nTeamIndex = 0;
+        for (const auto& iter : pResult->m_mapUserBasicInfo)
+        {       
+            pTeamInfo = new CBuddyTeamInfo();
+            pTeamInfo->m_nIndex = nTeamIndex;
+            ++ nTeamIndex;
+            pTeamInfo->m_strName = EncodeUtil::Utf8ToUnicode(iter.first);
+            m_UserMgr.m_BuddyList.m_arrBuddyTeamInfo.push_back(pTeamInfo);
+            
+            for (auto& iter2 : iter.second)
+            {       
+                EncodeUtil::Utf8ToUnicode(iter2->szAccountName, szAccountName, ARRAYSIZE(szAccountName));
+                EncodeUtil::Utf8ToUnicode(iter2->szNickName, szNickName, ARRAYSIZE(szNickName));
+                EncodeUtil::Utf8ToUnicode(iter2->szSignature, szSignature, ARRAYSIZE(szSignature));
+                EncodeUtil::Utf8ToUnicode(iter2->szPhoneNumber, szPhoneNumber, ARRAYSIZE(szPhoneNumber));
+                EncodeUtil::Utf8ToUnicode(iter2->szMail, szMail, ARRAYSIZE(szMail));
+                EncodeUtil::Utf8ToUnicode(iter2->szAddress, szAddress, ARRAYSIZE(szAddress));
         
-        if (iter->uAccountID < 0xFFFFFFF)
-        {
-            pBuddyInfo = new CBuddyInfo();
-            pBuddyInfo->m_uUserID = iter->uAccountID;
+                if (iter2->uAccountID < 0xFFFFFFF)
+                {
+                    pBuddyInfo = new CBuddyInfo();
+                    pBuddyInfo->m_uUserID = iter2->uAccountID;
 
-            pBuddyInfo->m_strAccount = szAccountName;
+                    pBuddyInfo->m_strAccount = szAccountName;
 
-            pBuddyInfo->m_strNickName = szNickName;
+                    pBuddyInfo->m_strNickName = szNickName;
 
-            pBuddyInfo->m_strSign = szSignature;
+                    pBuddyInfo->m_strSign = szSignature;
 
-            pBuddyInfo->m_strMobile = szPhoneNumber;
+                    pBuddyInfo->m_strMobile = szPhoneNumber;
 
-            pBuddyInfo->m_strEmail = szMail;
-            pBuddyInfo->m_nStatus = iter->nStatus;
-            pBuddyInfo->m_nClientType = iter->clientType;
-            pBuddyInfo->m_nFace = iter->uFaceID;
-            pBuddyInfo->m_nBirthday = iter->nBirthday;
-            pBuddyInfo->m_nGender = iter->nGender;
+                    pBuddyInfo->m_strEmail = szMail;
+                    pBuddyInfo->m_strAddress = szAddress;
+                    pBuddyInfo->m_nStatus = iter2->nStatus;
+                    pBuddyInfo->m_nClientType = iter2->clientType;
+                    pBuddyInfo->m_nFace = iter2->uFaceID;
+                    pBuddyInfo->m_nBirthday = iter2->nBirthday;
+                    pBuddyInfo->m_nGender = iter2->nGender;
 
-			pBuddyInfo->m_strCustomFaceName = iter->customFace;
-			if (!pBuddyInfo->m_strCustomFaceName.IsEmpty())
-			{
-				pBuddyInfo->m_bUseCustomFace = TRUE;
-				CString cachedUserThumb;
-				cachedUserThumb.Format(_T("%s%d.png"), m_UserMgr.GetCustomUserThumbFolder().c_str(), iter->uAccountID);
-				if (Hootina::CPath::IsFileExist(cachedUserThumb))
-				{
-					TCHAR szCachedThumbMd5[64] = { 0 };
-					GetFileMd5ValueW(cachedUserThumb, szCachedThumbMd5, ARRAYSIZE(szCachedThumbMd5));
+			        pBuddyInfo->m_strCustomFaceName = iter2->customFace;
+			        if (!pBuddyInfo->m_strCustomFaceName.IsEmpty())
+			        {
+				        pBuddyInfo->m_bUseCustomFace = TRUE;
+				        CString cachedUserThumb;
+				        cachedUserThumb.Format(_T("%s%d.png"), m_UserMgr.GetCustomUserThumbFolder().c_str(), iter2->uAccountID);
+				        if (Hootina::CPath::IsFileExist(cachedUserThumb))
+				        {
+					        TCHAR szCachedThumbMd5[64] = { 0 };
+					        GetFileMd5ValueW(cachedUserThumb, szCachedThumbMd5, ARRAYSIZE(szCachedThumbMd5));
 
-					TCHAR szThumbMd5Unicode[64] = { 0 };
-					Utf8ToUnicode(iter->customFace, szThumbMd5Unicode, ARRAYSIZE(szThumbMd5Unicode));
-					if (_tcsncmp(szCachedThumbMd5, szThumbMd5Unicode, 32) == 0)
-					{
-						pBuddyInfo->m_bUseCustomFace = TRUE;
-						pBuddyInfo->m_bCustomFaceAvailable = TRUE;
-					}
-					//头像不存在，下载该头像
-					else
-					{
-						//下载头像
-						CFileItemRequest* pFileItem = new CFileItemRequest();
-						pFileItem->m_nFileType = FILE_ITEM_DOWNLOAD_USER_THUMB;
-						pFileItem->m_uAccountID = iter->uAccountID;
-						strcpy_s(pFileItem->m_szUtfFilePath, ARRAYSIZE(pFileItem->m_szUtfFilePath), iter->customFace);
-						m_FileTask.AddItem(pFileItem);
-					}
-				}
-				else
-				{
-					//下载头像
-					CFileItemRequest* pFileItem = new CFileItemRequest();
-					pFileItem->m_nFileType = FILE_ITEM_DOWNLOAD_USER_THUMB;
-					pFileItem->m_uAccountID = iter->uAccountID;
-					strcpy_s(pFileItem->m_szUtfFilePath, ARRAYSIZE(pFileItem->m_szUtfFilePath), iter->customFace);
-					m_FileTask.AddItem(pFileItem);
-				}
-			}
+					        TCHAR szThumbMd5Unicode[64] = { 0 };
+                            EncodeUtil::Utf8ToUnicode(iter2->customFace, szThumbMd5Unicode, ARRAYSIZE(szThumbMd5Unicode));
+					        if (_tcsncmp(szCachedThumbMd5, szThumbMd5Unicode, 32) == 0)
+					        {
+						        pBuddyInfo->m_bUseCustomFace = TRUE;
+						        pBuddyInfo->m_bCustomFaceAvailable = TRUE;
+					        }
+					        //头像不存在，下载该头像
+					        else
+					        {
+						        //下载头像
+						        CFileItemRequest* pFileItem = new CFileItemRequest();
+						        pFileItem->m_nFileType = FILE_ITEM_DOWNLOAD_USER_THUMB;
+						        pFileItem->m_uAccountID = iter2->uAccountID;
+						        strcpy_s(pFileItem->m_szUtfFilePath, ARRAYSIZE(pFileItem->m_szUtfFilePath), iter2->customFace);
+                                m_ImageTask.AddItem(pFileItem);
+					        }
+				        }
+				        else
+				        {
+					        //下载头像
+					        CFileItemRequest* pFileItem = new CFileItemRequest();
+					        pFileItem->m_nFileType = FILE_ITEM_DOWNLOAD_USER_THUMB;
+					        pFileItem->m_uAccountID = iter2->uAccountID;
+					        strcpy_s(pFileItem->m_szUtfFilePath, ARRAYSIZE(pFileItem->m_szUtfFilePath), iter2->customFace);
+                            m_ImageTask.AddItem(pFileItem);
+				        }
+			        }
 
-            pBuddyInfo->m_nTeamIndex = 0;
-            pTeamInfo->m_arrBuddyInfo.push_back(pBuddyInfo);
-        }
-        else
-        {
-            pGroupInfo = new CGroupInfo();
-            pGroupInfo->m_nGroupId = iter->uAccountID;
-            pGroupInfo->m_nGroupCode = iter->uAccountID;
-            pGroupInfo->m_strName = szNickName;
-            memset(szGroupAccount, 0, sizeof(szGroupAccount));
-            _stprintf_s(szGroupAccount, ARRAYSIZE(szGroupAccount), _T("%d"), iter->uAccountID);
-            pGroupInfo->m_strAccount = szGroupAccount;
+                    pBuddyInfo->m_nTeamIndex = 0;
+                    pTeamInfo->m_arrBuddyInfo.push_back(pBuddyInfo);
+                }
+                else
+                {
+                    pGroupInfo = new CGroupInfo();
+                    pGroupInfo->m_nGroupId = iter2->uAccountID;
+                    pGroupInfo->m_nGroupCode = iter2->uAccountID;
+                    pGroupInfo->m_strName = szNickName;
+                    memset(szGroupAccount, 0, sizeof(szGroupAccount));
+                    _stprintf_s(szGroupAccount, ARRAYSIZE(szGroupAccount), _T("%d"), iter2->uAccountID);
+                    pGroupInfo->m_strAccount = szGroupAccount;
 
-            m_UserMgr.m_GroupList.AddGroup(pGroupInfo);
+                    m_UserMgr.m_GroupList.AddGroup(pGroupInfo);
 
-            GetGroupMembers(iter->uAccountID);
-        }
+                    GetGroupMembers(iter2->uAccountID);
+                } 
 
-        DEL(iter);     
-    }       
-   
+                //TODO: 为啥不能直接DEL(iter2);
+                UserBasicInfo* p = iter2;
+                DEL(p);
+            }
+        }       
+   }
 
     delete pResult;
 
@@ -1145,11 +1261,11 @@ void CFlamingoClient::OnUpdateGroupBasicInfo(UINT message, WPARAM wParam, LPARAM
     
     for (auto& iter : pResult->m_listUserBasicInfo)
     {
-        Utf8ToUnicode(iter->szAccountName, szAccountName, ARRAYSIZE(szAccountName));
-        Utf8ToUnicode(iter->szNickName, szNickName, ARRAYSIZE(szNickName));
-        Utf8ToUnicode(iter->szSignature, szSignature, ARRAYSIZE(szSignature));
-        Utf8ToUnicode(iter->szPhoneNumber, szPhoneNumber, ARRAYSIZE(szPhoneNumber));
-        Utf8ToUnicode(iter->szMail, szMail, ARRAYSIZE(szMail));
+        EncodeUtil::Utf8ToUnicode(iter->szAccountName, szAccountName, ARRAYSIZE(szAccountName));
+        EncodeUtil::Utf8ToUnicode(iter->szNickName, szNickName, ARRAYSIZE(szNickName));
+        EncodeUtil::Utf8ToUnicode(iter->szSignature, szSignature, ARRAYSIZE(szSignature));
+        EncodeUtil::Utf8ToUnicode(iter->szPhoneNumber, szPhoneNumber, ARRAYSIZE(szPhoneNumber));
+        EncodeUtil::Utf8ToUnicode(iter->szMail, szMail, ARRAYSIZE(szMail));
 
 
         pBuddyInfo = new CBuddyInfo();
@@ -1182,7 +1298,7 @@ void CFlamingoClient::OnUpdateGroupBasicInfo(UINT message, WPARAM wParam, LPARAM
                 GetFileMd5ValueW(cachedUserThumb, szCachedThumbMd5, ARRAYSIZE(szCachedThumbMd5));
 
                 TCHAR szThumbMd5Unicode[64] = { 0 };
-                Utf8ToUnicode(iter->customFace, szThumbMd5Unicode, ARRAYSIZE(szThumbMd5Unicode));
+                EncodeUtil::Utf8ToUnicode(iter->customFace, szThumbMd5Unicode, ARRAYSIZE(szThumbMd5Unicode));
                 if (_tcsncmp(szCachedThumbMd5, szThumbMd5Unicode, 32) == 0)
                 {
                     pBuddyInfo->m_bUseCustomFace = TRUE;
@@ -1196,7 +1312,7 @@ void CFlamingoClient::OnUpdateGroupBasicInfo(UINT message, WPARAM wParam, LPARAM
                     pFileItem->m_nFileType = FILE_ITEM_DOWNLOAD_USER_THUMB;
                     pFileItem->m_uAccountID = iter->uAccountID;
                     strcpy_s(pFileItem->m_szUtfFilePath, ARRAYSIZE(pFileItem->m_szUtfFilePath), iter->customFace);
-                    m_FileTask.AddItem(pFileItem);
+                    m_ImageTask.AddItem(pFileItem);
                 }
             }
             else
@@ -1206,7 +1322,7 @@ void CFlamingoClient::OnUpdateGroupBasicInfo(UINT message, WPARAM wParam, LPARAM
                 pFileItem->m_nFileType = FILE_ITEM_DOWNLOAD_USER_THUMB;
                 pFileItem->m_uAccountID = iter->uAccountID;
                 strcpy_s(pFileItem->m_szUtfFilePath, ARRAYSIZE(pFileItem->m_szUtfFilePath), iter->customFace);
-                m_FileTask.AddItem(pFileItem);
+                m_ImageTask.AddItem(pFileItem);
             }
         }
 
@@ -1214,7 +1330,8 @@ void CFlamingoClient::OnUpdateGroupBasicInfo(UINT message, WPARAM wParam, LPARAM
 
         if (pGroupInfo != NULL)
         {
-            pGroupInfo->AddMember(pBuddyInfo);
+            if (!pGroupInfo->IsMember(pBuddyInfo->m_uUserID))
+                pGroupInfo->AddMember(pBuddyInfo);
         }
 
        
@@ -1238,26 +1355,26 @@ void CFlamingoClient::OnModifyInfoResult(UINT message, WPARAM wParam, LPARAM lPa
 		delete pResult;
 
     TCHAR szNickName[64] = { 0 };
-    Utf8ToUnicode(pResult->m_szNickName, szNickName, ARRAYSIZE(szNickName));
+    EncodeUtil::Utf8ToUnicode(pResult->m_szNickName, szNickName, ARRAYSIZE(szNickName));
     m_UserMgr.m_UserInfo.m_strNickName = szNickName;
     m_UserMgr.m_UserInfo.m_nFace = pResult->m_uFaceID;
     m_UserMgr.m_UserInfo.m_nGender = pResult->m_uGender;
     m_UserMgr.m_UserInfo.m_nBirthday = pResult->m_nBirthday;
 
     TCHAR szSignature[512] = { 0 };
-    Utf8ToUnicode(pResult->m_szSignature, szSignature, ARRAYSIZE(szSignature));
+    EncodeUtil::Utf8ToUnicode(pResult->m_szSignature, szSignature, ARRAYSIZE(szSignature));
     m_UserMgr.m_UserInfo.m_strSign = szSignature;
 
     TCHAR szAddress[512] = { 0 };
-    Utf8ToUnicode(pResult->m_szAddress, szAddress, ARRAYSIZE(szAddress));
+    EncodeUtil::Utf8ToUnicode(pResult->m_szAddress, szAddress, ARRAYSIZE(szAddress));
     m_UserMgr.m_UserInfo.m_strAddress = szAddress;
 
     TCHAR szPhoneNumber[64] = { 0 };
-    Utf8ToUnicode(pResult->m_szPhone, szPhoneNumber, ARRAYSIZE(szPhoneNumber));
+    EncodeUtil::Utf8ToUnicode(pResult->m_szPhone, szPhoneNumber, ARRAYSIZE(szPhoneNumber));
     m_UserMgr.m_UserInfo.m_strMobile = szPhoneNumber;
 
     TCHAR szMail[512] = { 0 };
-    Utf8ToUnicode(pResult->m_szMail, szMail, ARRAYSIZE(szMail));
+    EncodeUtil::Utf8ToUnicode(pResult->m_szMail, szMail, ARRAYSIZE(szMail));
     m_UserMgr.m_UserInfo.m_strEmail = szMail;
 
 	m_UserMgr.m_UserInfo.m_strCustomFaceName = pResult->m_szCustomFace;
@@ -1272,7 +1389,7 @@ void CFlamingoClient::OnModifyInfoResult(UINT message, WPARAM wParam, LPARAM lPa
 			GetFileMd5ValueW(cachedUserThumb, szCachedThumbMd5, ARRAYSIZE(szCachedThumbMd5));
 
 			TCHAR szThumbMd5Unicode[64] = { 0 };
-			Utf8ToUnicode(pResult->m_szCustomFace, szThumbMd5Unicode, ARRAYSIZE(szThumbMd5Unicode));
+            EncodeUtil::Utf8ToUnicode(pResult->m_szCustomFace, szThumbMd5Unicode, ARRAYSIZE(szThumbMd5Unicode));
 			if (_tcsncmp(szCachedThumbMd5, szThumbMd5Unicode, 32) == 0)
 			{
 				m_UserMgr.m_UserInfo.m_bUseCustomFace = TRUE;
@@ -1386,6 +1503,7 @@ void CFlamingoClient::OnUserStatusChange(UINT message, WPARAM wParam, LPARAM lPa
     if (pFriendStatus->m_type == 1 || pFriendStatus->m_type == 2)
     {
         SetBuddyStatus(uAccountID, nFlag);
+        SetBuddyClientType(uAccountID, pFriendStatus->m_nClientType);
 
         //自己
         //if(uAccountID == m_UserMgr.m_UserInfo.m_uUserID)
@@ -1427,14 +1545,14 @@ void CFlamingoClient::OnSendConfirmMessage(UINT message, WPARAM wParam, LPARAM l
     {
         time_t nTime = time(NULL);
         TCHAR szMd5[64] = { 0 };
-        AnsiToUnicode(pUploadFileResult->m_szMd5, szMd5, ARRAYSIZE(szMd5));
+        EncodeUtil::AnsiToUnicode(pUploadFileResult->m_szMd5, szMd5, ARRAYSIZE(szMd5));
         CString strImageName;
         strImageName.Format(_T("%s.%s"), szMd5, Hootina::CPath::GetExtension(pUploadFileResult->m_szLocalName).c_str());
         long nWidth = 0;
         long nHeight = 0;
         GetImageWidthAndHeight(pUploadFileResult->m_szLocalName, nWidth, nHeight);
         char szUtf8FileName[MAX_PATH] = { 0 };
-        UnicodeToUtf8(strImageName, szUtf8FileName, ARRAYSIZE(szUtf8FileName));
+        EncodeUtil::UnicodeToUtf8(strImageName, szUtf8FileName, ARRAYSIZE(szUtf8FileName));
         CStringA strImageAcquireMsg;
         //if (pUploadFileResult->m_bSuccessful)
         //    strImageAcquireMsg.Format("{\"msgType\":2,\"time\":%llu,\"clientType\":1,\"content\":[{\"pic\":[\"%s\",\"%s\",%u,%d,%d]}]}", nTime, szUtf8FileName, pUploadFileResult->m_szRemoteName, pUploadFileResult->m_dwFileSize, nWidth, nHeight);
@@ -1442,9 +1560,9 @@ void CFlamingoClient::OnSendConfirmMessage(UINT message, WPARAM wParam, LPARAM l
         //    strImageAcquireMsg.Format("{\"msgType\":2,\"time\":%llu,\"clientType\":1,\"content\":[{\"pic\":[\"%s\",\"\",%u,%d,%d]}]}", nTime, szUtf8FileName, pUploadFileResult->m_dwFileSize, nWidth, nHeight);
 
         if (pUploadFileResult->m_bSuccessful)
-            strImageAcquireMsg.Format("{\"msgType\":2,\"time\":%llu,\"clientType\":1,\"content\":[{\"pic\":[\"%s\",\"%s\",%u,%d,%d]}]}", nTime, szUtf8FileName, pUploadFileResult->m_szRemoteName, pUploadFileResult->m_dwFileSize, nWidth, nHeight);
+            strImageAcquireMsg.Format("{\"msgType\":2,\"time\":%lld,\"clientType\":1,\"content\":[{\"pic\":[\"%s\",\"%s\",%u,%d,%d]}]}", nTime, szUtf8FileName, pUploadFileResult->m_szRemoteName, pUploadFileResult->m_nFileSize, nWidth, nHeight);
         else
-            strImageAcquireMsg.Format("{\"msgType\":2,\"time\":%llu,\"clientType\":1,\"content\":[{\"pic\":[\"%s\",\"\",%u,%d,%d]}]}", nTime, szUtf8FileName, pUploadFileResult->m_dwFileSize, nWidth, nHeight);
+            strImageAcquireMsg.Format("{\"msgType\":2,\"time\":%lld,\"clientType\":1,\"content\":[{\"pic\":[\"%s\",\"\",%u,%d,%d]}]}", nTime, szUtf8FileName, pUploadFileResult->m_nFileSize, nWidth, nHeight);
 
         long nBodyLength = strImageAcquireMsg.GetLength() + 1;
         char* pszMsgBody = new char[nBodyLength];
@@ -1671,14 +1789,12 @@ void CFlamingoClient::OnStatusChangeMsg(UINT message, WPARAM wParam, LPARAM lPar
 
 void CFlamingoClient::OnKickMsg(UINT message, WPARAM wParam, LPARAM lParam)
 {
-	//CKickMessage* lpKickMsg = (CKickMessage*)lParam;
-	//if (NULL == lpKickMsg)
-	//	return;
-	//
-	//delete lpKickMsg;
-	//m_UserMgr.m_UserInfo.m_nStatus = STATUS_OFFLINE;
-	//m_ThreadPool.RemoveAllTask();
-	//::SendMessage(m_UserMgr.m_hCallBackWnd, FMG_MSG_KICK_MSG, 0, 0);
+    ::PostMessage(m_UserMgr.m_hCallBackWnd, FMG_MSG_SELF_STATUS_CHANGE, 0, (LPARAM)STATUS_ONLINE);
+}
+
+void CFlamingoClient::OnScreenshotMsg(UINT message, WPARAM wParam, LPARAM lParam)
+{
+    ::PostMessage(m_UserMgr.m_hCallBackWnd, FMG_MSG_SCREENSHOT, wParam, lParam);
 }
 
 void CFlamingoClient::OnUpdateBuddyNumber(UINT message, WPARAM wParam, LPARAM lParam)
@@ -1946,6 +2062,17 @@ BOOL CFlamingoClient::SetBuddyStatus(UINT uAccountID, long nStatus)
 	return FALSE;
 }
 
+BOOL CFlamingoClient::SetBuddyClientType(UINT uAccountID, long nNewClientType)
+{
+    if (uAccountID != m_UserMgr.m_UserInfo.m_uUserID)
+    {
+        m_UserMgr.SetClientType(uAccountID, nNewClientType);
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
 
 long CFlamingoClient::ParseBuddyStatus(long nFlag)
 {
@@ -1987,8 +2114,9 @@ void CFlamingoClient::GoOnline()
 
 void CFlamingoClient::GoOffline()
 {
-	//m_IUProtocol.Disconnect();
-	//m_IUProtocol.DisconnectFileServer();
+    CIUSocket::GetInstance().Close();
+    CIUSocket::GetInstance().CloseFileServerConnection();
+    CIUSocket::GetInstance().CloseImgServerConnection();
 
 	m_UserMgr.ResetToOfflineStatus();
 	//m_HeartbeatTask.Stop();
@@ -1996,7 +2124,7 @@ void CFlamingoClient::GoOffline()
 	//m_mapUserStatusCache.clear();
 	
 	::SendMessage(m_UserMgr.m_hCallBackWnd, FMG_MSG_UPDATE_BUDDY_INFO, 0, (LPARAM)m_UserMgr.m_UserInfo.m_uUserID);
-	//::SendMessage(m_UserMgr.m_hCallBackWnd, FMG_MSG_UPDATE_BUDDY_LIST, 0, 0);
+	::SendMessage(m_UserMgr.m_hCallBackWnd, FMG_MSG_UPDATE_BUDDY_LIST, 0, 0);
 	::SendMessage(m_UserMgr.m_hCallBackWnd, FMG_MSG_UPDATE_RECENT_LIST, 0, 0);
 	::SendMessage(m_UserMgr.m_hCallBackWnd, FMG_MSG_UPDATE_GROUP_LIST, 0, 0);
 }
@@ -2051,7 +2179,7 @@ void CFlamingoClient::CacheBuddyStatus()
 BOOL CFlamingoClient::CreateProxyWnd()
 {
 	WNDCLASSEX wcex;
-	LPCTSTR szWindowClass = _T("UTALK_PROXY_WND");
+	LPCTSTR szWindowClass = _T("FLAMINGO_PROXY_WND");
 	HWND hWnd;
 
 	DestroyProxyWnd();	// 销毁代理窗口
@@ -2109,6 +2237,11 @@ LRESULT CALLBACK CFlamingoClient::ProxyWndProc(HWND hWnd, UINT message, WPARAM w
 
 	switch (message)
 	{
+    //网络错误
+    case FMG_MSG_NET_ERROR:
+        ::PostMessage(lpFMGClient->m_UserMgr.m_hCallBackWnd, FMG_MSG_NET_ERROR, 0, 0);
+        break;
+
 	case FMG_MSG_HEARTBEAT:
 		lpFMGClient->OnHeartbeatResult(message, wParam, lParam);
 		break;
@@ -2201,9 +2334,12 @@ LRESULT CALLBACK CFlamingoClient::ProxyWndProc(HWND hWnd, UINT message, WPARAM w
 	case FMG_MSG_STATUS_CHANGE_MSG:		// 好友状态改变消息
 		lpFMGClient->OnStatusChangeMsg(message, wParam, lParam);
 		break;
-	case FMG_MSG_KICK_MSG:				// 被踢下线消息
+    case FMG_MSG_SELF_STATUS_CHANGE:	//自己的状态发生改变，例如被踢下线消息
 		lpFMGClient->OnKickMsg(message, wParam, lParam);
 		break;
+    case FMG_MSG_SCREENSHOT:    //截屏消息
+        lpFMGClient->OnScreenshotMsg(message, wParam, lParam);        
+        break;
 	case FMG_MSG_SYS_GROUP_MSG:			// 群系统消息
 		lpFMGClient->OnSysGroupMsg(message, wParam, lParam);
 		break;

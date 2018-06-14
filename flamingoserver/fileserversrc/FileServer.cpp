@@ -1,5 +1,5 @@
 /**
- *  文件服务器主服务类，FileServer.cpp
+ *  文件服务器和图片服务器主服务类，FileServer.cpp
  *  zhangyl 2017.03.17
  **/
 #include "../net/inetaddress.h"
@@ -8,10 +8,12 @@
 #include "FileServer.h"
 #include "FileSession.h"
 
-bool FileServer::Init(const char* ip, short port, EventLoop* loop)
+bool FileServer::Init(const char* ip, short port, EventLoop* loop, const char* fileBaseDir/* = "filecache/"*/)
 {
+    m_strFileBaseDir = fileBaseDir;
+
     InetAddress addr(ip, port);
-    m_server.reset(new TcpServer(loop, addr, "ZYL-MYFileServer", TcpServer::kReusePort));
+    m_server.reset(new TcpServer(loop, addr, "ZYL-MYImgAndFileServer", TcpServer::kReusePort));
     m_server->setConnectionCallback(std::bind(&FileServer::OnConnection, this, std::placeholders::_1));
     //启动侦听
     m_server->start();
@@ -23,9 +25,9 @@ void FileServer::OnConnection(std::shared_ptr<TcpConnection> conn)
 {
     if (conn->connected())
     {
-        LOG_INFO << "client connected:" << conn->peerAddress().toIpPort();
+        //LOG_INFO << "client connected:" << conn->peerAddress().toIpPort();
         ++ m_baseUserId;
-        std::shared_ptr<FileSession> spSession(new FileSession(conn));
+        std::shared_ptr<FileSession> spSession(new FileSession(conn, m_strFileBaseDir.c_str()));
         conn->setMessageCallback(std::bind(&FileSession::OnRead, spSession.get(), std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 
         std::lock_guard<std::mutex> guard(m_sessionMutex);

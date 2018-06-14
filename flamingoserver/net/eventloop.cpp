@@ -1,18 +1,12 @@
-// Copyright 2010, Shuo Chen.  All rights reserved.
-// http://code.google.com/p/muduo/
-//
-// Use of this source code is governed by a BSD-style license
-// that can be found in the License file.
-
-// Author: Shuo Chen (chenshuo at chenshuo dot com)
 #include <signal.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
 #include <sstream>
 #include <iostream>
 
-#include "eventloop.h"
 #include "../base/logging.h"
+#include "TimerQueue.h"
+#include "eventloop.h"
 #include "channel.h"
 #include "epollpoller.h"
 #include "sockets.h"
@@ -66,6 +60,7 @@ callingPendingFunctors_(false),
 iteration_(0),
 threadId_(std::this_thread::get_id()),
 poller_(new EPollPoller(this)),
+timerQueue_(new TimerQueue(this)),
 wakeupFd_(createEventfd()),
 wakeupChannel_(new Channel(this, wakeupFd_)),
 currentActiveChannel_(NULL)
@@ -78,8 +73,7 @@ currentActiveChannel_(NULL)
 	{
 		t_loopInThisThread = this;
 	}
-	wakeupChannel_->setReadCallback(
-		std::bind(&EventLoop::handleRead, this));
+	wakeupChannel_->setReadCallback(std::bind(&EventLoop::handleRead, this));
 	// we are always reading the wakeupfd
 	wakeupChannel_->enableReading();
 
@@ -181,6 +175,45 @@ void EventLoop::queueInLoop(const Functor& cb)
 void EventLoop::setFrameFunctor(const Functor& cb)
 {
 	frameFunctor_ = cb;
+}
+
+TimerId EventLoop::runAt(const Timestamp& time, const TimerCallback& cb)
+{
+    return timerQueue_->addTimer(cb, time, 0.0);
+}
+
+TimerId EventLoop::runAfter(double delay, const TimerCallback& cb)
+{
+    Timestamp time(addTime(Timestamp::now(), delay));
+    return runAt(time, cb);
+}
+
+TimerId EventLoop::runEvery(double interval, const TimerCallback& cb)
+{
+    Timestamp time(addTime(Timestamp::now(), interval));
+    return timerQueue_->addTimer(cb, time, interval);
+}
+
+TimerId EventLoop::runAt(const Timestamp& time, TimerCallback&& cb)
+{
+    return timerQueue_->addTimer(std::move(cb), time, 0.0);
+}
+
+TimerId EventLoop::runAfter(double delay, TimerCallback&& cb)
+{
+    Timestamp time(addTime(Timestamp::now(), delay));
+    return runAt(time, std::move(cb));
+}
+
+TimerId EventLoop::runEvery(double interval, TimerCallback&& cb)
+{
+    Timestamp time(addTime(Timestamp::now(), interval));
+    return timerQueue_->addTimer(std::move(cb), time, interval);
+}
+
+void EventLoop::cancel(TimerId timerId)
+{
+    return timerQueue_->cancel(timerId);
 }
 
 void EventLoop::updateChannel(Channel* channel)

@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include "../base/logging.h"
 #include "../base/singleton.h"
@@ -18,6 +19,7 @@
 #include "../mysql/mysqlmanager.h"
 #include "UserManager.h"
 #include "IMServer.h"
+#include "MonitorServer.h"
 
 using namespace net;
 
@@ -81,7 +83,6 @@ int main(int argc, char* argv[])
     signal(SIGCHLD, SIG_DFL);
     signal(SIGPIPE, SIG_IGN);
     signal(SIGINT, prog_exit);
-    signal(SIGKILL, prog_exit);
     signal(SIGTERM, prog_exit);
 
     int ch;
@@ -100,14 +101,38 @@ int main(int argc, char* argv[])
         daemon_run();
 
 
-    CConfigFileReader config("chatserver.conf");
+    CConfigFileReader config("mychatserver.conf");
 
-    Logger::setLogLevel(Logger::DEBUG);
-    const char* logfilepath = config.GetConfigName("logdir");
-
+    Logger::setLogLevel(Logger::INFO);
+    const char* logfilepath = config.GetConfigName("logfiledir");
+    if (logfilepath == NULL)
+    {
+        LOG_SYSFATAL << "logdir is not set in config file";
+        return 1;
+    }
+    //如果log目录不存在则创建之
+    DIR* dp = opendir(logfilepath);
+    if (dp == NULL)
+    {        
+        if (mkdir(logfilepath, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) != 0)
+        {            
+            LOG_SYSFATAL << "create base dir error, " << logfilepath << ", errno: " << errno << ", " << strerror(errno);
+            return 1;
+        }
+    }
+    closedir(dp);
+    
+    const char* logfilename = config.GetConfigName("logfilename");
+    if (logfilename == NULL)
+    {
+        LOG_SYSFATAL << "logfilename is not set in config file";
+        return 1;
+    }
+    std::string strLogFileFullPath(logfilepath);
+    strLogFileFullPath += logfilename;
     Logger::setLogLevel(Logger::DEBUG);
     int kRollSize = 500 * 1000 * 1000;
-    AsyncLogging log(logfilepath, kRollSize);
+    AsyncLogging log(strLogFileFullPath.c_str(), kRollSize);
     log.start();
     g_asyncLog = &log;
     Logger::setOutput(asyncOutput);
@@ -119,12 +144,12 @@ int main(int argc, char* argv[])
     const char* dbname = config.GetConfigName("dbname");
 	if (!Singleton<CMysqlManager>::Instance().Init(dbserver, dbuser, dbpassword, dbname))
     {
-        LOG_FATAL << "please check your database config..............";
+        LOG_FATAL << "Init mysql failed, please check your database config..............";
     }
 
     if (!Singleton<UserManager>::Instance().Init(dbserver, dbuser, dbpassword, dbname))
     {
-        LOG_FATAL << "please check your database config..............";
+        LOG_FATAL << "Init UserManager failed, please check your database config..............";
     }
 
     Singleton<EventLoopThreadPool>::Instance().Init(&g_mainLoop, 4);
@@ -133,6 +158,13 @@ int main(int argc, char* argv[])
     const char* listenip = config.GetConfigName("listenip");
     short listenport = (short)atol(config.GetConfigName("listenport"));
     Singleton<IMServer>::Instance().Init(listenip, listenport, &g_mainLoop);
+
+    const char* monitorlistenip = config.GetConfigName("monitorlistenip");
+    short monitorlistenport = (short)atol(config.GetConfigName("monitorlistenport"));
+    const char* monitortoken = config.GetConfigName("monitortoken");
+    Singleton<MonitorServer>::Instance().Init(monitorlistenip, monitorlistenport, &g_mainLoop, monitortoken);
+
+    LOG_INFO << "chatserver initialization complete.";
     
     g_mainLoop.loop();
 

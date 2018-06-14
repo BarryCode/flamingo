@@ -3,6 +3,8 @@
 #pragma once
 #include <set>
 #include <list>
+#include <map>
+#include <stdint.h>
 
 //客户端类型
 enum CLIENT_TYPE
@@ -39,7 +41,6 @@ enum LOGIN_TYPE
 {
 	LOGIN_USE_MOBILE_NUMBER = 0,	//使用手机号登录
 	LOGIN_USE_ACCOUNT		= 1,	//使用账号登录
-	LOGIN_USE_UTS_ACCOUNT	= 2		//使用中间件账号登录
 };
 
 enum LOGIN_RESULT_CODE	// 登录结果代码
@@ -254,6 +255,7 @@ enum NET_DATA_TYPE
 	NET_DATA_REGISTER,
 	NET_DATA_LOGIN,
 	NET_DATA_USER_BASIC_INFO,
+    NET_DATA_CHANGE_STATUS,
     NET_DATA_GROUP_BASIC_INFO,
 	NET_DATA_USER_EXTEND_INFO,
 	NET_DATA_FRIENDS_ID,
@@ -267,6 +269,7 @@ enum NET_DATA_TYPE
 	NET_DATA_TARGET_INFO_CHANGE,
 	NET_DATA_MODIFY_PASSWORD,
 	NET_DATA_CREATE_NEW_GROUP,
+    NET_DATA_ADD_NEW_TEAM,              //添加新的好友分组
 
 	NET_DATA_FILE
 };
@@ -356,7 +359,18 @@ public:
 	~CUserBasicInfoResult();
 
 public:
-	std::list<UserBasicInfo*> m_listUserBasicInfo;
+    //key是分组的名字，value是该组好友的集合
+	std::map<std::string, std::list<UserBasicInfo*>> m_mapUserBasicInfo;
+};
+
+class CChangeUserStatusRequest : public CNetData
+{
+public:
+    CChangeUserStatusRequest();
+    ~CChangeUserStatusRequest();
+
+public:
+    int32_t m_nNewStatus;
 };
 
 class CGroupBasicInfoRequest : public CNetData
@@ -430,6 +444,7 @@ public:
 public:
 	UINT	m_uAccountID;
 	long	m_nStatus;
+    long    m_nClientType;
     int     m_type;
 };
 
@@ -479,6 +494,16 @@ public:
 	UINT m_uCmd;
 	char m_szAccountName[64];
 	char m_szNickName[64];
+};
+
+class CAddTeamInfoRequest : public CNetData
+{
+public:
+    CAddTeamInfoRequest();
+    ~CAddTeamInfoRequest();
+
+public:
+    std::wstring m_strNewTeamInfo;
 };
 
 class CMsgItem;
@@ -637,6 +662,18 @@ public:
 
 };
 
+class CScreenshotInfo
+{
+public:
+    CScreenshotInfo();
+    ~CScreenshotInfo();
+
+public:
+    std::string m_strBmpHeader;
+    std::string m_strBmpData;
+    UINT        m_targetId;
+};
+
 
 /////////////////////////////////////////////////////
 /////////////////////////////////////////////////////
@@ -676,7 +713,7 @@ public:
 public:
 	long			m_nFileType;
 	BOOL			m_bSuccessful;					//是否上传成功
-	DWORD			m_dwFileSize;					//文件大小
+	int64_t			m_nFileSize;					//文件大小
 	TCHAR			m_szLocalName[MAX_PATH];		//本地文件名
 						
 	char			m_szMd5[64];					//文件的md5值

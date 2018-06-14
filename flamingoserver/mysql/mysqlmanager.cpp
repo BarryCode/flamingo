@@ -31,7 +31,7 @@ CMysqlManager::CMysqlManager(void)
         info.m_mapField["f_phonenumber"] = { "f_phonenumber", "varchar(64) DEFAULT NULL COMMENT '电话'", "varchar(64)" };
         info.m_mapField["f_mail"] = { "f_mail", "varchar(256) DEFAULT NULL COMMENT '邮箱'", "varchar(256)" };
         info.m_mapField["f_owner_id"] = { "f_owner_id", "bigint(20) DEFAULT 0 COMMENT '群账号群主userid'", "bigint(20)" };
-               
+        info.m_mapField["f_teaminfo"] = { "f_teaminfo", "blob default null comment '好友分组信息'", "blob" };
         info.m_mapField["f_register_time"] = { "f_register_time", "datetime NOT NULL COMMENT '注册时间'", "datetime" };
         info.m_mapField["f_remark"] = { "f_remark", "varchar(64) NULL COMMENT '备注'", "varchar(64)" };
         info.m_mapField["f_update_time"] = { "f_update_time", "timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'", "timestamp" };
@@ -58,9 +58,13 @@ CMysqlManager::CMysqlManager(void)
         info.m_strName = "t_user_relationship";
         info.m_mapField["f_id"] = { "f_id", "bigint(20) NOT NULL AUTO_INCREMENT COMMENT '自增ID'", "bigint(20)" };
         info.m_mapField["f_user_id1"] = { "f_user_id1", "bigint(20) NOT NULL COMMENT '用户ID'", "bigint(20)" };
-        info.m_mapField["f_user_id2"] = { "f_user_id2", "bigint(20) NOT NULL COMMENT '用户ID'", "bigint(20)" };     
+        info.m_mapField["f_user_id2"] = { "f_user_id2", "bigint(20) NOT NULL COMMENT '用户ID'", "bigint(20)" };
+        info.m_mapField["f_user1_teamindex"] = { "f_user1_teamindex", "INT NOT NULL DEFAULT 0 COMMENT '用户2在用户1的好友分组索引'", "INT" };
+        info.m_mapField["f_user1_teamname"] = { "f_user1_teamname", "VARCHAR(32) NOT NULL DEFAULT '我的好友' COMMENT '用户2在用户1的好友分组名称'", "VARCHAR(32)" };
+        info.m_mapField["f_user2_teamindex"] = { "f_user2_teamindex", "INT NOT NULL DEFAULT 0 COMMENT '用户1在用户2的好友分组索引'", "INT" };
+        info.m_mapField["f_user2_teamname"] = { "f_user2_teamname", "VARCHAR(32) NOT NULL DEFAULT '我的好友' COMMENT '用户1在用户2的好友分组名称'", "VARCHAR(32)" };
         info.m_mapField["f_remark"] = { "f_remark", "varchar(64) NULL COMMENT '备注'", "varchar(64)" };
-        info.m_mapField["f_create_time"] = { "f_create_time", "timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'", "timestamp" };
+        info.m_mapField["f_update_time"] = { "f_update_time", "timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'", "timestamp" };
 
         info.m_strKeyString = "PRIMARY KEY (f_id), INDEX f_id (f_id)";
         m_vecTableInfo.push_back(info);
@@ -91,6 +95,22 @@ CMysqlManager::CMysqlManager(void)
         chat.m_strKeyString = "PRIMARY KEY (f_id), INDEX f_id (f_id)";
 		m_vecTableInfo.push_back(chat);
 	}
+
+    {
+        STableInfo device;
+        device.m_strName = "t_device";
+        device.m_mapField["f_id"] = { "f_id", "bigint(20) NOT NULL AUTO_INCREMENT COMMENT '自增ID'", "bigint(20)" };
+        device.m_mapField["f_userid"] = { "f_userid", "bigint(20) NOT NULL COMMENT '用户id'", "bigint(20)" };
+        device.m_mapField["f_deviceid"] = { "f_deviceid", "bigint(20) NOT NULL COMMENT '设备id'", "bigint(20)" };
+        device.m_mapField["f_classtype"] = { "f_classtype", "bigint(20) NOT NULL COMMENT '信息类别'", "int(20)" };
+        device.m_mapField["f_deviceinfo"] = { "f_deviceinfo", "BLOB NOT NULL COMMENT '设备具体信息内容'", "BLOB" };
+        device.m_mapField["f_upload_time"] = { "f_upload_time", "timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '上传时间'", "timestamp" };
+        device.m_mapField["f_create_time"] = { "f_create_time", "timestamp DEFAULT 0 COMMENT '更新时间'", "timestamp" };
+        device.m_mapField["f_remark"] = { "f_remark", "varchar(64) NULL COMMENT '备注'", "varchar(64)" };
+
+        device.m_strKeyString = "PRIMARY KEY (f_id), INDEX f_id (f_id)";
+        m_vecTableInfo.push_back(device);
+    }
 
 	//// 3. chatmsg 
 	//{

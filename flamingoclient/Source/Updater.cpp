@@ -1,12 +1,12 @@
 #include "stdafx.h"
 #include "Updater.h"
 #include "UserSessionData.h"
-#include "File.h"
+#include "File2.h"
 #include "EncodingUtil.h"
 #include "Utils.h"
-#include "FileTask.h"
+#include "FileTaskThread.h"
 
-Updater::Updater(CFileTask* pFileTask)
+Updater::Updater(CFileTaskThread* pFileTask)
 {
     m_pFileTask = pFileTask;
 }
@@ -15,7 +15,6 @@ Updater::~Updater()
 {
 	m_aryUpdateFileList.clear();
 }
-
 
 BOOL Updater::IsNeedUpdate()
 {
@@ -47,7 +46,7 @@ BOOL Updater::IsNeedUpdate()
 	CString strLocal;
 	if(pBuffer != NULL)
 	{
-		Utf8ToUnicode(pBuffer, strLocal.GetBuffer(file.GetSize()*2), file.GetSize()*2);
+        EncodeUtil::Utf8ToUnicode(pBuffer, strLocal.GetBuffer(file.GetSize() * 2), file.GetSize() * 2);
 		strLocal.ReleaseBuffer();
 	}
 	if(strLocal.IsEmpty())
@@ -70,7 +69,7 @@ BOOL Updater::IsNeedUpdate()
 	pBuffer = file.Read();
 	if(pBuffer != NULL)
 	{
-		Utf8ToUnicode(pBuffer, strCorrection.GetBuffer(file.GetSize()*2), file.GetSize()*2);
+        EncodeUtil::Utf8ToUnicode(pBuffer, strCorrection.GetBuffer(file.GetSize() * 2), file.GetSize() * 2);
 		strCorrection.ReleaseBuffer();
 	}
 	if(strCorrection.IsEmpty())

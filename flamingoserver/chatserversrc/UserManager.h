@@ -14,6 +14,12 @@ using namespace std;
 
 #define GROUPID_BOUBDARY   0x0FFFFFFF 
 
+enum FRIEND_OPERATION
+{
+    FRIEND_OPERATION_ADD,
+    FRIEND_OPERATION_DELETE
+};
+
 //用户或者群
 struct User
 {
@@ -30,6 +36,40 @@ struct User
     string         address;
     string         phonenumber;
     string         mail;
+    /*
+    个人用户好友分组信息，对于群账户则为空，例如:
+    [
+    {
+        "teamindex": 0,
+        "teamname": "我的好友",
+        "members": [
+            {
+                "userid": 1,
+                "markname": "张某某"
+            },
+            {
+                "userid": 2,
+                "markname": "张xx"
+            }
+        ]
+    },
+    {
+        "teamindex": 1,
+        "teamname": "我的朋友",
+        "members": [
+            {
+                "userid": 3,
+                "markname": "张某某"
+            },
+            {
+                "userid": 4,
+                "markname": "张xx"
+            }
+        ]
+    }
+]
+    */
+    string         teaminfo;       //对于普通用户，为分组信息；对于群组则为空
     int32_t        ownerid;        //对于群账号，为群主userid
     set<int32_t>   friends;        //为了避免重复
 };
@@ -50,10 +90,16 @@ public:
     bool ReleaseFriendRelationship(int32_t smallUserid, int32_t greaterUserid);
     bool AddFriendToUser(int32_t userid, int32_t friendid);
     bool DeleteFriendToUser(int32_t userid, int32_t friendid);
-    bool UpdateUserInfo(int32_t userid, const User& newuserinfo);
+
+    //TODO: 这类都是更新用户信息的接口，将来可以考虑统一起来
+    bool UpdateUserInfoInDb(int32_t userid, const User& newuserinfo);
     bool ModifyUserPassword(int32_t userid, const std::string& newpassword);
+    bool UpdateUserTeamInfo(int32_t userid, int32_t target, FRIEND_OPERATION operation);
+    bool UpdateUserTeamInfoInDb(int32_t userid, const std::string& newteaminfo);
 
     bool AddGroup(const char* groupname, int32_t ownerid, int32_t& groupid);
+
+    bool InsertDeviceInfo(int32_t userid, int32_t deviceid, int32_t classtype, int64_t uploadtime, const std::string& deviceinfo);
 
     //聊天消息入库
     bool SaveChatMsgToDb(int32_t senderid, int32_t targetid, const std::string& chatmsg);
@@ -62,10 +108,12 @@ public:
     bool GetUserInfoByUsername(const std::string& username, User& u);
     bool GetUserInfoByUserId(int32_t userid, User& u);
     bool GetFriendInfoByUserId(int32_t userid, std::list<User>& friends);
+    bool GetTeamInfoByUserId(int32_t userid, std::string& teaminfo);
 
 private:
     bool LoadUsersFromDb();
-    bool LoadRelationhipFromDb(int32_t userid, std::set<int32_t>& r);
+    bool LoadRelationshipFromDb(int32_t userid, std::set<int32_t>& r);
+    bool MakeUpTeamInfo(User& u, const set<int32_t>& friends);
 
 private:
     int                 m_baseUserId{ 0 };        //m_baseUserId, 取数据库里面userid最大值，新增用户在这个基础上递增

@@ -3,10 +3,11 @@
  * zhangyl 2017.03.09
  **/
 #include "../base/logging.h"
-#include "TcpSession.h"
+#include "../net/protocolstream.h"
 #include "FileMsg.h"
+#include "TcpSession.h"
 
-TcpSession::TcpSession(const std::shared_ptr<TcpConnection>& conn) : tmpConn_(conn)
+TcpSession::TcpSession(const std::weak_ptr<TcpConnection>& tmpconn) : tmpConn_(tmpconn)
 {
     
 }
@@ -16,32 +17,42 @@ TcpSession::~TcpSession()
     
 }
 
-void TcpSession::Send(const std::string& buf)
+void TcpSession::Send(int32_t cmd, int32_t seq, int32_t errorcode, const std::string& filemd5, int64_t offset, int64_t filesize, const std::string& filedata)
 {
-    //TODO: 确认下是否是每个TcpConnection是否只在其归属的EvenLoop中发送
-    string strSendData;
-    file_msg header = { (int64_t)buf.length() };
-    LOG_INFO << "Send data, header length:" << sizeof(header) << ", body length:" << buf.length();
-    strSendData.append((const char*)&header, sizeof(header));
-    strSendData.append(buf.c_str(), buf.length());
-    std::shared_ptr<TcpConnection> conn = tmpConn_.lock();
-    if (conn)
-    {
-        size_t length = strSendData.length();
-        //LOG_INFO << "Send data, length:" << length;
-        LOG_DEBUG_BIN((unsigned char*)strSendData.c_str(), length);
-        conn->send(strSendData.c_str(), length);
-    }
+    std::string outbuf;
+    balloon::BinaryWriteStream writeStream(&outbuf);
+    writeStream.WriteInt32(cmd);
+    writeStream.WriteInt32(seq);
+    writeStream.WriteInt32(errorcode);
+    writeStream.WriteString(filemd5);
+    writeStream.WriteInt64(offset);
+    writeStream.WriteInt64(filesize);
+    writeStream.WriteString(filedata);   
+    writeStream.Flush();
+
+    SendPackage(outbuf.c_str(), outbuf.length());
 }
 
-void TcpSession::Send(const char* p, int length)
+void TcpSession::SendPackage(const char* body, int64_t bodylength)
 {
+    string strPackageData;
+    file_msg header = { (int64_t)bodylength };
+    strPackageData.append((const char*)&header, sizeof(header));
+    strPackageData.append(body, bodylength);
+
     //TODO: 这些Session和connection对象的生命周期要好好梳理一下
+    if (tmpConn_.expired())
+    {
+        //FIXME: 出现这种问题需要排查
+        LOG_ERROR << "Tcp connection is destroyed , but why TcpSession is still alive ?";
+        return;
+    }
+
     std::shared_ptr<TcpConnection> conn = tmpConn_.lock();
     if (conn)
     {
-        LOG_INFO << "Send data, length:" << length;
-        LOG_DEBUG_BIN((unsigned char*)p, length);
-        conn->send(p, length);
+        //LOG_INFO << "Send data, length:" << length;
+        //LOG_DEBUG_BIN((unsigned char*)p, length);
+        conn->send(strPackageData.c_str(), strPackageData.length());
     }
 }

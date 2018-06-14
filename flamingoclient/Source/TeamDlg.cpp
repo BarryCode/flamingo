@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "TeamDlg.h"
 #include "FlamingoClient.h"
+#include "UIText.h"
 
 
 CTeamDlg::CTeamDlg()
@@ -120,27 +121,28 @@ void CTeamDlg::OnOK(UINT uNotifyCode, int nID, CWindow wndCtl)
 	strTeamName.Trim();
 	if(strTeamName.IsEmpty())
 	{
-		::MessageBox(m_hWnd, _T("分组名不能为空。"), _T("Flamingo"), MB_OK|MB_ICONINFORMATION);
+		::MessageBox(m_hWnd, _T("分组名不能为空。"), g_strAppTitle.c_str(), MB_OK|MB_ICONINFORMATION);
 		return;
 	}
 	else if(strTeamName.GetLength() >= 16)
 	{
-		::MessageBox(m_hWnd, _T("分组名不能超过15个字符。"), _T("Flamingo"), MB_OK|MB_ICONINFORMATION);
+		::MessageBox(m_hWnd, _T("分组名不能超过15个字符。"), g_strAppTitle.c_str(), MB_OK|MB_ICONINFORMATION);
 		return;
 	}
 
 	if(m_pFMGClient->m_UserMgr.m_BuddyList.IsTeamNameExist(strTeamName))
 	{
-		::MessageBox(m_hWnd, _T("分组名已经存在！"), _T("Flamingo"), MB_OK|MB_ICONINFORMATION);
+		::MessageBox(m_hWnd, _T("分组名已经存在！"), g_strAppTitle.c_str(), MB_OK|MB_ICONINFORMATION);
 		return;
 	}
 
 	//添加分组
 	if(m_nOperationType == TEAM_OPERATION_ADDTEAM)
 	{
-		CBuddyTeamInfo* pTeamInfo = new CBuddyTeamInfo();
-		pTeamInfo->m_strName = strTeamName;
-		m_pFMGClient->m_UserMgr.m_BuddyList.AddBuddyTeam(pTeamInfo);
+		//CBuddyTeamInfo* pTeamInfo = new CBuddyTeamInfo();
+		//pTeamInfo->m_strName = strTeamName;
+		//m_pFMGClient->m_UserMgr.m_BuddyList.AddBuddyTeam(pTeamInfo);
+        m_pFMGClient->AddNewTeam(strTeamName);
 	}
 	else if(m_nOperationType == TEAM_OPERATION_MODIFYTEAMNAME)
 	{

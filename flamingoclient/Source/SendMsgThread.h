@@ -58,12 +58,10 @@ class CUpdateLogonUserInfoRequest;
 class CModifyPasswordRequest;
 class CCreateNewGroupRequest;
 
-class CIUSocket;
-
 class CSendMsgThread : public CThread
 {
 public:
-    CSendMsgThread(CIUSocket* socketClient);
+    CSendMsgThread();
     virtual ~CSendMsgThread(void);
 
 public:
@@ -85,6 +83,7 @@ private:
 	void HandleRegister(const CRegisterRequest* pRegisterRequest);
     void HandleLogon(const CLoginRequest* pLoginRequest);
 	void HandleUserBasicInfo(const CUserBasicInfoRequest* pUserBasicInfo);
+    void HandleChangeUserStatus(const CChangeUserStatusRequest* pChangeUserStatusRequest);
     void HandleGroupBasicInfo(const CGroupBasicInfoRequest* pGroupBasicInfo);
 	BOOL HandleSentChatMessage(const CSentChatMessage* pSentChatMessage);				
 	BOOL HandleSentConfirmImageMessage(const CSentChatConfirmImageMessage* pConfirmImageMessage);	//图片上传成功以后的确认信息
@@ -94,12 +93,14 @@ private:
 	void HandleUpdateLogonUserInfoMessage(const CUpdateLogonUserInfoRequest* pRequest);
 	void HandleModifyPassword(const CModifyPasswordRequest* pModifyPassword);
 	void HandleCreateNewGroup(const CCreateNewGroupRequest* pCreateNewGroup);
+    void HandleAddNewTeam(const CAddTeamInfoRequest* pAddNewTeam);
 
 	BOOL HandleFontInfo(LPCTSTR& p, tstring& strText, std::vector<CContent*>& arrContent);
 	BOOL HandleSysFaceId(LPCTSTR& p, tstring& strText, std::vector<CContent*>& arrContent);
 	BOOL HandleShakeWindowMsg(LPCTSTR& p, tstring& strText, std::vector<CContent*>& arrContent);
 	BOOL HandleCustomPic(LPCTSTR& p, tstring& strText, std::vector<CContent*>& arrContent);
 	BOOL HandleFile(LPCTSTR& p, tstring& strText, std::vector<CContent*>& arrContent);
+    BOOL HandleRemoteDesktop(LPCTSTR& p, tstring& strText, std::vector<CContent*>& arrContent);
 	BOOL CreateMsgContent(const tstring& strChatMsg, std::vector<CContent*>& arrContent);
 	
     //TODO: 这四个函数起始可以合并成一个函数
@@ -116,7 +117,7 @@ private:
 	std::wstring UnicodeToHexStr(const WCHAR* lpStr, BOOL bDblSlash);
 
 public:
-	CFlamingoClient*				m_lpFMGClient;
+	CFlamingoClient*			m_lpFMGClient;
 	CUserMgr*					m_lpUserMgr;
 
 private:
@@ -130,6 +131,4 @@ private:
     std::condition_variable     m_cvItems;
 
     int32_t                     m_seq{};            //包序列号
-
-    CIUSocket*                  m_SocketClient;
 };
